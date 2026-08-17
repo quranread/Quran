@@ -37,7 +37,9 @@ fun AyahScreen(dbHelper: QuranDatabaseHelper, surahId: Int, onBack: () -> Unit) 
             items(ayahs) { ayah ->
                 Text(
                     text = "${ayah.arabicText} \uFD3F${ayah.ayahNumber}\uFD3E",
-                    fontSize = 24.sp,
+                    fontFamily = AmiriQuranFont,
+                    fontSize = 26.sp,
+                    lineHeight = 46.sp,
                     textAlign = TextAlign.Right,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                 )

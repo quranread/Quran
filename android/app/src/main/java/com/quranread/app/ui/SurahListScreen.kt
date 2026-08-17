@@ -47,7 +47,7 @@ fun SurahListScreen(dbHelper: QuranDatabaseHelper, onSurahClick: (Int) -> Unit) 
                     Text(text = "${surah.id}. ${surah.nameEn}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(text = "${surah.revelationPlace} • ${surah.ayahCount} Ayahs", fontSize = 12.sp)
                 }
-                Text(text = surah.nameAr, fontSize = 18.sp)
+                Text(text = surah.nameAr, fontFamily = AmiriQuranFont, fontSize = 20.sp)
             }
             Divider()
         }
