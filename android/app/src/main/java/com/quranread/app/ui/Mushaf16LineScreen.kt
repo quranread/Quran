@@ -1,5 +1,6 @@
 package com.quranread.app.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import com.quranread.app.data.MushafLine
  * correct 16 lines show up for the correct page and swiping between
  * pages works. Border image + custom IndoPak font get layered on later.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Mushaf16LineScreen(dbHelper: Mushaf16DatabaseHelper, onBack: () -> Unit) {
     val pagerState = rememberPagerState(
