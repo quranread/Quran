@@ -1,6 +1,7 @@
 package com.quranread.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -20,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -32,6 +35,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quranread.app.data.Mushaf16DatabaseHelper
 import com.quranread.app.data.MushafLine
+
+// Set to true temporarily to see row dividers + the text-block boundary
+// box, so misalignment is easy to spot before the real border image is
+// added. Set back to false (or delete this + the guide code) once the
+// border is in place.
+private const val SHOW_DEBUG_GUIDES = true
 
 private val BASE_FONT_SIZE = 20.sp
 private val MIN_FONT_SIZE = 9.sp
@@ -127,10 +136,18 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
 
                 if (ready && lines.isNotEmpty()) {
                     Column(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .let {
+                                if (SHOW_DEBUG_GUIDES) {
+                                    // Red box = exactly where the border's
+                                    // inner edge should sit later.
+                                    it.border(1.dp, Color.Red)
+                                } else it
+                            },
                         verticalArrangement = Arrangement.Top
                     ) {
-                        lines.forEach { line ->
+                        lines.forEachIndexed { index, line ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -143,6 +160,9 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                                     availableWidthPx = availableWidthPx,
                                     textMeasurer = textMeasurer
                                 )
+                            }
+                            if (SHOW_DEBUG_GUIDES && index != lines.lastIndex) {
+                                Divider(color = Color.Blue, thickness = 0.5.dp)
                             }
                         }
                     }
