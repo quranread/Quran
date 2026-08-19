@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -21,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
@@ -33,17 +33,24 @@ import androidx.compose.ui.unit.sp
 import com.quranread.app.data.Mushaf16DatabaseHelper
 import com.quranread.app.data.MushafLine
 
-private val MAX_FONT_SIZE = 22.sp
+private val BASE_FONT_SIZE = 20.sp
 private val MIN_FONT_SIZE = 9.sp
-private val SIDE_PADDING = 20.dp
-private val PAGE_NUMBER_RESERVED_HEIGHT = 28.dp
+
+// Generous reserved space on every side so the decorative border, added
+// later, always sits fully outside the text block with room to spare.
+private val SIDE_PADDING = 28.dp
+private val TOP_PADDING = 28.dp
+private val BOTTOM_PADDING = 40.dp // extra room reserved for page number
 
 /**
- * Simple test screen: no border/background yet. Verifies correct 16
- * lines per page, correct RTL word order, all lines guaranteed to fit
- * on screen (weight-based rows, single page-wide font size so nothing
- * overflows below the visible area), and proper side margins so no
- * letters look clipped at the edges.
+ * 16-line Mushaf page screen. No visible in-app back button - navigation
+ * relies entirely on the device/system back gesture or button, which
+ * Compose Navigation already handles automatically via the back stack.
+ *
+ * Every printed line is stretched (justified) so it starts and ends at
+ * exactly the same left/right margin as every other line on the page -
+ * matching how a real Mushaf page is typeset - so a rectangular border
+ * added later will frame the text block cleanly on all sides.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,24 +60,18 @@ fun Mushaf16LineScreen(dbHelper: Mushaf16DatabaseHelper, onBack: () -> Unit) {
         pageCount = { dbHelper.totalPages }
     )
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Button(onClick = onBack, modifier = Modifier.padding(8.dp)) {
-            Text("Back")
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize()
+    ) { pageIndex ->
+        val pageNumber = pageIndex + 1
+        var lines by remember(pageNumber) { mutableStateOf<List<MushafLine>>(emptyList()) }
+
+        LaunchedEffect(pageNumber) {
+            lines = dbHelper.getLinesForPage(pageNumber)
         }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { pageIndex ->
-            val pageNumber = pageIndex + 1
-            var lines by remember(pageNumber) { mutableStateOf<List<MushafLine>>(emptyList()) }
-
-            LaunchedEffect(pageNumber) {
-                lines = dbHelper.getLinesForPage(pageNumber)
-            }
-
-            MushafPageContent(pageNumber = pageNumber, lines = lines)
-        }
+        MushafPageContent(pageNumber = pageNumber, lines = lines)
     }
 }
 
@@ -89,28 +90,35 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                     .padding(
                         start = SIDE_PADDING,
                         end = SIDE_PADDING,
-                        top = 12.dp,
-                        bottom = PAGE_NUMBER_RESERVED_HEIGHT
+                        top = TOP_PADDING,
+                        bottom = BOTTOM_PADDING
                     )
             ) {
                 val availableWidthPx = with(density) { maxWidth.toPx() }
-                var fontSize by remember(pageNumber, lines) { mutableStateOf(MAX_FONT_SIZE) }
+                var fontSize by remember(pageNumber, lines) { mutableStateOf(BASE_FONT_SIZE) }
                 var ready by remember(pageNumber, lines) { mutableStateOf(false) }
 
+                // One shared font size per page: the largest size at
+                // which the longest line still fits without wrapping.
+                // Shorter lines are then stretched (below) to match the
+                // same full width, instead of shrinking everything to
+                // the shortest line's natural size.
                 LaunchedEffect(pageNumber, lines, availableWidthPx) {
                     if (lines.isEmpty() || availableWidthPx <= 0f) return@LaunchedEffect
-                    var size = MAX_FONT_SIZE
+                    var size = BASE_FONT_SIZE
                     while (size.value > MIN_FONT_SIZE.value) {
-                        val fitsAll = lines.all { line ->
+                        val longestFits = lines.all { line ->
                             val result = textMeasurer.measure(
                                 text = AnnotatedString(line.text),
                                 style = TextStyle(fontFamily = AmiriQuranFont, fontSize = size),
                                 maxLines = 1,
                                 softWrap = false
                             )
-                            result.size.width <= availableWidthPx
+                            // allow stretching up to ~1.35x so short lines
+                            // don't need to be blown up too aggressively
+                            result.size.width * 0.74f <= availableWidthPx
                         }
-                        if (fitsAll) break
+                        if (longestFits) break
                         size = (size.value - 0.5f).sp
                     }
                     fontSize = size
@@ -129,14 +137,11 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                                     .weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
+                                JustifiedMushafLine(
                                     text = line.text,
-                                    fontFamily = AmiriQuranFont,
                                     fontSize = fontSize,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
+                                    availableWidthPx = availableWidthPx,
+                                    textMeasurer = textMeasurer
                                 )
                             }
                         }
@@ -149,8 +154,50 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                 fontSize = 14.sp,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp)
+                    .padding(bottom = 10.dp)
             )
         }
     }
+}
+
+/**
+ * Renders one line stretched horizontally so it exactly fills the
+ * available width - every line then starts and ends at the same
+ * margin, like a justified line in the printed Mushaf.
+ */
+@Composable
+private fun JustifiedMushafLine(
+    text: String,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    availableWidthPx: Float,
+    textMeasurer: androidx.compose.ui.text.TextMeasurer
+) {
+    var scaleX by remember(text, fontSize, availableWidthPx) { mutableStateOf(1f) }
+
+    LaunchedEffect(text, fontSize, availableWidthPx) {
+        if (availableWidthPx <= 0f) return@LaunchedEffect
+        val result = textMeasurer.measure(
+            text = AnnotatedString(text),
+            style = TextStyle(fontFamily = AmiriQuranFont, fontSize = fontSize),
+            maxLines = 1,
+            softWrap = false
+        )
+        if (result.size.width > 0) {
+            val ratio = availableWidthPx / result.size.width.toFloat()
+            // clamp to avoid absurd distortion on very short lines
+            scaleX = ratio.coerceIn(0.85f, 1.3f)
+        }
+    }
+
+    Text(
+        text = text,
+        fontFamily = AmiriQuranFont,
+        fontSize = fontSize,
+        maxLines = 1,
+        softWrap = false,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { this.scaleX = scaleX }
+    )
 }
