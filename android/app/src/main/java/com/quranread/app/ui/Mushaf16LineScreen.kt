@@ -195,7 +195,6 @@ private fun JustifiedMushafLine(
     availableWidthPx: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer
 ) {
-    val density = LocalDensity.current
     var naturalWidthPx by remember(text, fontSize) { mutableStateOf(0f) }
     var scaleX by remember(text, fontSize, availableWidthPx) { mutableStateOf(1f) }
     var ready by remember(text, fontSize, availableWidthPx) { mutableStateOf(false) }
@@ -216,7 +215,6 @@ private fun JustifiedMushafLine(
     }
 
     if (ready) {
-        val naturalWidthDp = with(density) { naturalWidthPx.toDp() }
         Text(
             text = text,
             fontFamily = AmiriQuranFont,
@@ -224,9 +222,7 @@ private fun JustifiedMushafLine(
             maxLines = 1,
             softWrap = false,
             textAlign = TextAlign.Center,
-            modifier = Modifier
-                .width(naturalWidthDp)
-                .graphicsLayer { this.scaleX = scaleX }
+            modifier = Modifier.graphicsLayer { this.scaleX = scaleX }
         )
     }
 }
