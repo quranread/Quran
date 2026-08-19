@@ -28,18 +28,22 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quranread.app.data.Mushaf16DatabaseHelper
 import com.quranread.app.data.MushafLine
 
+private val MAX_FONT_SIZE = 22.sp
+private val MIN_FONT_SIZE = 9.sp
+private val SIDE_PADDING = 20.dp
+private val PAGE_NUMBER_RESERVED_HEIGHT = 28.dp
+
 /**
- * Simple test screen: no border/background yet, just verifies that the
- * correct 16 lines show up for the correct page, in correct RTL order,
- * each staying on a single print-line (auto-shrinking font to fit),
- * and swiping between pages works. Border image + custom IndoPak font
- * get layered on later.
+ * Simple test screen: no border/background yet. Verifies correct 16
+ * lines per page, correct RTL word order, all lines guaranteed to fit
+ * on screen (weight-based rows, single page-wide font size so nothing
+ * overflows below the visible area), and proper side margins so no
+ * letters look clipped at the edges.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -65,77 +69,87 @@ fun Mushaf16LineScreen(dbHelper: Mushaf16DatabaseHelper, onBack: () -> Unit) {
                 lines = dbHelper.getLinesForPage(pageNumber)
             }
 
-            // Arabic text must lay out right-to-left, otherwise wrapped/
-            // constrained text can appear with fragments in the wrong order.
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        lines.forEach { line ->
-                            AutoSizeMushafLine(
-                                text = line.text,
-                                maxFontSize = 22.sp
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "$pageNumber",
-                        fontSize = 14.sp,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 8.dp)
-                    )
-                }
-            }
+            MushafPageContent(pageNumber = pageNumber, lines = lines)
         }
     }
 }
 
-/**
- * Renders one printed Mushaf line on a single visual line, shrinking the
- * font size just enough for it to fit the available width without
- * wrapping - matching how a real Mushaf page is typeset.
- */
 @Composable
-private fun AutoSizeMushafLine(text: String, maxFontSize: TextUnit) {
+private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val maxWidthPx = with(density) { maxWidth.toPx() }
-        var fontSize by remember(text, maxWidthPx) { mutableStateOf(maxFontSize) }
-        var measured by remember(text, maxWidthPx) { mutableStateOf(false) }
+    // Arabic text must lay out right-to-left, otherwise fragments can
+    // end up in the wrong visual order.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = SIDE_PADDING,
+                        end = SIDE_PADDING,
+                        top = 12.dp,
+                        bottom = PAGE_NUMBER_RESERVED_HEIGHT
+                    )
+            ) {
+                val availableWidthPx = with(density) { maxWidth.toPx() }
+                var fontSize by remember(pageNumber, lines) { mutableStateOf(MAX_FONT_SIZE) }
+                var ready by remember(pageNumber, lines) { mutableStateOf(false) }
 
-        LaunchedEffect(text, maxWidthPx) {
-            var size = maxFontSize
-            while (size.value > 8f) {
-                val result = textMeasurer.measure(
-                    text = AnnotatedString(text),
-                    style = TextStyle(fontFamily = AmiriQuranFont, fontSize = size),
-                    maxLines = 1,
-                    softWrap = false
-                )
-                if (result.size.width <= maxWidthPx) break
-                size = (size.value - 0.5f).sp
+                LaunchedEffect(pageNumber, lines, availableWidthPx) {
+                    if (lines.isEmpty() || availableWidthPx <= 0f) return@LaunchedEffect
+                    var size = MAX_FONT_SIZE
+                    while (size.value > MIN_FONT_SIZE.value) {
+                        val fitsAll = lines.all { line ->
+                            val result = textMeasurer.measure(
+                                text = AnnotatedString(line.text),
+                                style = TextStyle(fontFamily = AmiriQuranFont, fontSize = size),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            result.size.width <= availableWidthPx
+                        }
+                        if (fitsAll) break
+                        size = (size.value - 0.5f).sp
+                    }
+                    fontSize = size
+                    ready = true
+                }
+
+                if (ready && lines.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Top
+                    ) {
+                        lines.forEach { line ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = line.text,
+                                    fontFamily = AmiriQuranFont,
+                                    fontSize = fontSize,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
             }
-            fontSize = size
-            measured = true
-        }
 
-        if (measured) {
             Text(
-                text = text,
-                fontFamily = AmiriQuranFont,
-                fontSize = fontSize,
-                maxLines = 1,
-                softWrap = false,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                text = "$pageNumber",
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 6.dp)
             )
         }
     }
