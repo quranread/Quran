@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
@@ -126,9 +125,9 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                                 maxLines = 1,
                                 softWrap = false
                             )
-                            // leave a small buffer here too, matching the
-                            // 0.94 target used for per-line stretching
-                            result.size.width <= availableWidthPx * 0.94f
+                            // small buffer so the longest line still has
+                            // breathing room, not touching the border
+                            result.size.width <= availableWidthPx * 0.97f
                         }
                         if (longestFits) break
                         size = (size.value - 0.5f).sp
@@ -184,11 +183,11 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
 }
 
 /**
- * Renders one line stretched (or slightly compressed) horizontally so
- * it exactly fills the available width - every line then starts and
- * ends at the same margin, like a justified line in the printed
- * Mushaf. The Text is first sized to its own natural, unclipped width
- * and only then scaled, so no glyphs are ever cut off.
+ * Renders one line at its natural size, centered - no horizontal
+ * scaling/stretching, so waqf marks, ayah-end circles, and ligatures
+ * (e.g. Allah) render exactly as the font intends. This means lines
+ * won't all touch both margins perfectly (unlike a true kashida-
+ * justified print Mushaf), but nothing gets visually distorted.
  */
 @Composable
 private fun JustifiedMushafLine(
@@ -197,38 +196,13 @@ private fun JustifiedMushafLine(
     availableWidthPx: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer
 ) {
-    var naturalWidthPx by remember(text, fontSize) { mutableStateOf(0f) }
-    var scaleX by remember(text, fontSize, availableWidthPx) { mutableStateOf(1f) }
-    var ready by remember(text, fontSize, availableWidthPx) { mutableStateOf(false) }
-
-    LaunchedEffect(text, fontSize, availableWidthPx) {
-        if (availableWidthPx <= 0f) return@LaunchedEffect
-        val result = textMeasurer.measure(
-            text = AnnotatedString(text),
-            style = TextStyle(fontFamily = IndoPakFont, fontSize = fontSize),
-            maxLines = 1,
-            softWrap = false
-        )
-        if (result.size.width > 0) {
-            naturalWidthPx = result.size.width.toFloat()
-            // target ~94% of available width, not the full width, so
-            // stretched lines keep a small safety margin and never
-            // visually poke past the border area
-            val targetWidthPx = availableWidthPx * 0.94f
-            scaleX = (targetWidthPx / naturalWidthPx).coerceIn(0.85f, 1.2f)
-            ready = true
-        }
-    }
-
-    if (ready) {
-        Text(
-            text = text,
-            fontFamily = IndoPakFont,
-            fontSize = fontSize,
-            maxLines = 1,
-            softWrap = false,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.graphicsLayer { this.scaleX = scaleX }
-        )
-    }
+    Text(
+        text = text,
+        fontFamily = IndoPakFont,
+        fontSize = fontSize,
+        maxLines = 1,
+        softWrap = false,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
