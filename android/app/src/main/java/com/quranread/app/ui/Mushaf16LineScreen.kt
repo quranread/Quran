@@ -122,11 +122,13 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                         val longestFits = lines.all { line ->
                             val result = textMeasurer.measure(
                                 text = AnnotatedString(line.text),
-                                style = TextStyle(fontFamily = AmiriQuranFont, fontSize = size),
+                                style = TextStyle(fontFamily = IndoPakFont, fontSize = size),
                                 maxLines = 1,
                                 softWrap = false
                             )
-                            result.size.width <= availableWidthPx
+                            // leave a small buffer here too, matching the
+                            // 0.94 target used for per-line stretching
+                            result.size.width <= availableWidthPx * 0.94f
                         }
                         if (longestFits) break
                         size = (size.value - 0.5f).sp
@@ -203,13 +205,17 @@ private fun JustifiedMushafLine(
         if (availableWidthPx <= 0f) return@LaunchedEffect
         val result = textMeasurer.measure(
             text = AnnotatedString(text),
-            style = TextStyle(fontFamily = AmiriQuranFont, fontSize = fontSize),
+            style = TextStyle(fontFamily = IndoPakFont, fontSize = fontSize),
             maxLines = 1,
             softWrap = false
         )
         if (result.size.width > 0) {
             naturalWidthPx = result.size.width.toFloat()
-            scaleX = (availableWidthPx / naturalWidthPx).coerceIn(0.85f, 1.4f)
+            // target ~94% of available width, not the full width, so
+            // stretched lines keep a small safety margin and never
+            // visually poke past the border area
+            val targetWidthPx = availableWidthPx * 0.94f
+            scaleX = (targetWidthPx / naturalWidthPx).coerceIn(0.85f, 1.2f)
             ready = true
         }
     }
@@ -217,7 +223,7 @@ private fun JustifiedMushafLine(
     if (ready) {
         Text(
             text = text,
-            fontFamily = AmiriQuranFont,
+            fontFamily = IndoPakFont,
             fontSize = fontSize,
             maxLines = 1,
             softWrap = false,
