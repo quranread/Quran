@@ -6,6 +6,9 @@ import java.io.FileOutputStream
 
 data class MushafLine(
     val lineNumber: Int,
+    val lineType: String, // "ayah", "surah_name", or "basmallah"
+    val isCentered: Boolean,
+    val surahNumber: Int?,
     val text: String
 )
 
@@ -22,7 +25,7 @@ data class AyahMetadata(
 
 class Mushaf16DatabaseHelper(private val context: Context) {
 
-    private val dbName = "mushaf16_final.db"
+    private val dbName = "mushaf16_v2.db"
 
     // The Indopak 16-line (Taj company) mushaf edition has 548 pages total.
     val totalPages = 548
@@ -48,7 +51,8 @@ class Mushaf16DatabaseHelper(private val context: Context) {
         val list = mutableListOf<MushafLine>()
         val db = openDatabase()
         val cursor = db.rawQuery(
-            "SELECT line_number, text FROM page_lines WHERE page_number = ? ORDER BY line_number",
+            """SELECT line_number, line_type, is_centered, surah_number, text
+               FROM page_lines WHERE page_number = ? ORDER BY line_number""",
             arrayOf(pageNumber.toString())
         )
         cursor.use {
@@ -56,7 +60,10 @@ class Mushaf16DatabaseHelper(private val context: Context) {
                 list.add(
                     MushafLine(
                         lineNumber = it.getInt(0),
-                        text = it.getString(1)
+                        lineType = it.getString(1),
+                        isCentered = it.getInt(2) == 1,
+                        surahNumber = if (it.isNull(3)) null else it.getInt(3),
+                        text = it.getString(4) ?: ""
                     )
                 )
             }
@@ -66,15 +73,7 @@ class Mushaf16DatabaseHelper(private val context: Context) {
     }
 
     /**
-     * Verse-level metadata (ruku/sajdah/juz/manzil/hizb numbers) for one
-     * ayah. This is independent of page numbering, so it's reliable for
-     * all 114 surahs even though the upstream API's own page numbers for
-     * this mushaf are only correct up to surah ~59.
-     *
-     * NOTE: there isn't yet a mapping from (page, line) -> (surah, ayah),
-     * so this can't be cross-referenced against getLinesForPage() output
-     * yet. That mapping is the next piece needed before ruku circles /
-     * sajdah icons can be positioned in the margin automatically.
+     * Verse-level metadata (ruku/sajdah/juz/manzil/hizb numbers) for one ayah.
      */
     fun getAyahMetadata(surah: Int, ayah: Int): AyahMetadata? {
         val db = openDatabase()
