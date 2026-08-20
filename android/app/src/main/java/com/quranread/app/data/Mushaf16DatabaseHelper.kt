@@ -9,11 +9,22 @@ data class MushafLine(
     val text: String
 )
 
+data class AyahMetadata(
+    val surah: Int,
+    val ayah: Int,
+    val juzNumber: Int?,
+    val hizbNumber: Int?,
+    val rubElHizbNumber: Int?,
+    val rukuNumber: Int?,
+    val manzilNumber: Int?,
+    val sajdahNumber: Int?
+)
+
 class Mushaf16DatabaseHelper(private val context: Context) {
 
-    private val dbName = "mushaf16_lines.db"
+    private val dbName = "mushaf16_final.db"
 
-    // A 16-line Taj Company mushaf edition has 548 pages total.
+    // The Indopak 16-line (Taj company) mushaf edition has 548 pages total.
     val totalPages = 548
 
     private fun getDatabasePath(): String {
@@ -52,5 +63,43 @@ class Mushaf16DatabaseHelper(private val context: Context) {
         }
         db.close()
         return list
+    }
+
+    /**
+     * Verse-level metadata (ruku/sajdah/juz/manzil/hizb numbers) for one
+     * ayah. This is independent of page numbering, so it's reliable for
+     * all 114 surahs even though the upstream API's own page numbers for
+     * this mushaf are only correct up to surah ~59.
+     *
+     * NOTE: there isn't yet a mapping from (page, line) -> (surah, ayah),
+     * so this can't be cross-referenced against getLinesForPage() output
+     * yet. That mapping is the next piece needed before ruku circles /
+     * sajdah icons can be positioned in the margin automatically.
+     */
+    fun getAyahMetadata(surah: Int, ayah: Int): AyahMetadata? {
+        val db = openDatabase()
+        val cursor = db.rawQuery(
+            """SELECT surah, ayah, juz_number, hizb_number, rub_el_hizb_number,
+               ruku_number, manzil_number, sajdah_number
+               FROM ayah_metadata WHERE surah = ? AND ayah = ?""",
+            arrayOf(surah.toString(), ayah.toString())
+        )
+        var result: AyahMetadata? = null
+        cursor.use {
+            if (it.moveToFirst()) {
+                result = AyahMetadata(
+                    surah = it.getInt(0),
+                    ayah = it.getInt(1),
+                    juzNumber = if (it.isNull(2)) null else it.getInt(2),
+                    hizbNumber = if (it.isNull(3)) null else it.getInt(3),
+                    rubElHizbNumber = if (it.isNull(4)) null else it.getInt(4),
+                    rukuNumber = if (it.isNull(5)) null else it.getInt(5),
+                    manzilNumber = if (it.isNull(6)) null else it.getInt(6),
+                    sajdahNumber = if (it.isNull(7)) null else it.getInt(7)
+                )
+            }
+        }
+        db.close()
+        return result
     }
 }
