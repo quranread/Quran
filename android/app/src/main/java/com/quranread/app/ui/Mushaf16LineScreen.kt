@@ -2,6 +2,7 @@ package com.quranread.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,6 +51,19 @@ private val MIN_FONT_SIZE = 9.sp
 private val SIDE_PADDING = 28.dp
 private val TOP_PADDING = 28.dp
 private val BOTTOM_PADDING = 40.dp // extra room reserved for page number
+
+// Extra vertical room reserved above/below each line's baseline, as a
+// multiple of fontSize, so stacked marks (shadda, waqf/pause signs,
+// hamza) that sit above or below a letter always fit inside that
+// line's own row instead of bleeding into the row above/below it.
+private const val LINE_HEIGHT_MULTIPLIER = 1.55f
+
+// How far (as a fraction of a line's natural width) we're willing to
+// stretch it via letter-spacing to reach the shared margin. Beyond
+// this, stretching starts looking like unnatural gaps between letters
+// rather than a justified line, so very short lines are centered
+// instead of forced to fit.
+private const val MAX_JUSTIFY_STRETCH_RATIO = 0.35f
 
 /**
  * 16-line Mushaf page screen. No visible in-app back button - navigation
@@ -104,32 +118,43 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                     )
             ) {
                 val availableWidthPx = with(density) { maxWidth.toPx() }
+                val availableHeightPx = with(density) { maxHeight.toPx() }
                 var fontSize by remember(pageNumber, lines) { mutableStateOf(BASE_FONT_SIZE) }
                 var ready by remember(pageNumber, lines) { mutableStateOf(false) }
 
-                // One shared font size per page: the largest size at
-                // which the longest line's *natural* (unstretched)
-                // width still fits within the available space. Shorter
-                // lines are then stretched (below) to reach the same
-                // full width - this mirrors how a real justified
-                // Mushaf line is typeset (short lines get more
-                // kashida-style stretch, the longest line needs none).
-                LaunchedEffect(pageNumber, lines, availableWidthPx) {
-                    if (lines.isEmpty() || availableWidthPx <= 0f) return@LaunchedEffect
+                // One shared font size per page: the largest size that
+                // satisfies BOTH constraints for every line -
+                // (1) natural (unstretched) width still fits within the
+                // available space, and (2) the line's height, INCLUDING
+                // room for stacked marks (LINE_HEIGHT_MULTIPLIER), still
+                // fits inside its own row (availableHeight / 16).
+                // Checking width alone let a font size through that was
+                // narrow enough but vertically too tall for its row,
+                // which is what let waqf/pause marks spill outside
+                // their line or into the next one. Shorter lines are
+                // then justified (below) to reach the same full width.
+                LaunchedEffect(pageNumber, lines, availableWidthPx, availableHeightPx) {
+                    if (lines.isEmpty() || availableWidthPx <= 0f || availableHeightPx <= 0f) return@LaunchedEffect
+                    val rowHeightPx = availableHeightPx / lines.size
                     var size = BASE_FONT_SIZE
                     while (size.value > MIN_FONT_SIZE.value) {
-                        val longestFits = lines.all { line ->
+                        val fitsEveryLine = lines.all { line ->
                             val result = textMeasurer.measure(
                                 text = AnnotatedString(line.text),
-                                style = TextStyle(fontFamily = IndoPakFont, fontSize = size),
+                                style = TextStyle(
+                                    fontFamily = IndoPakFont,
+                                    fontSize = size,
+                                    lineHeight = size * LINE_HEIGHT_MULTIPLIER
+                                ),
                                 maxLines = 1,
                                 softWrap = false
                             )
                             // small buffer so the longest line still has
                             // breathing room, not touching the border
-                            result.size.width <= availableWidthPx * 0.97f
+                            result.size.width <= availableWidthPx * 0.97f &&
+                                result.size.height <= rowHeightPx
                         }
-                        if (longestFits) break
+                        if (fitsEveryLine) break
                         size = (size.value - 0.5f).sp
                     }
                     fontSize = size
@@ -153,11 +178,17 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1f),
+                                    .weight(1f)
+                                    // Safety net: even with the height-aware
+                                    // sizing above, this guarantees a mark
+                                    // can never visually bleed into the row
+                                    // above/below it - worst case it gets
+                                    // clipped instead of overlapping.
+                                    .clipToBounds(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                JustifiedMushafLine(
-                                    text = line.text,
+                                MushafLineText(
+                                    line = line,
                                     fontSize = fontSize,
                                     availableWidthPx = availableWidthPx,
                                     textMeasurer = textMeasurer
@@ -183,26 +214,81 @@ private fun MushafPageContent(pageNumber: Int, lines: List<MushafLine>) {
 }
 
 /**
- * Renders one line at its natural size, centered - no horizontal
- * scaling/stretching, so waqf marks, ayah-end circles, and ligatures
- * (e.g. Allah) render exactly as the font intends. This means lines
- * won't all touch both margins perfectly (unlike a true kashida-
- * justified print Mushaf), but nothing gets visually distorted.
+ * Renders one Mushaf line.
+ *
+ * - Surah-name banners and the basmallah are short by design and meant
+ *   to sit centered on their own row (this is exactly what the
+ *   database's `isCentered` / `lineType` columns encode) - these are
+ *   left centered, never stretched.
+ * - Ordinary ayah lines are justified via letter-spacing so they start
+ *   and end at the same margin as every other line on the page, the
+ *   way a printed Mushaf line is typeset. This is a letter-spacing
+ *   approximation of true kashida justification (real kashida needs
+ *   font-level glyph elongation the font/renderer doesn't expose here)
+ *   - it adds even spacing between characters rather than scaling any
+ *     glyph, so nothing gets visually distorted, but the space added
+ *     between a base letter and its own diacritic can look very
+ *     slightly looser than print on heavily-marked lines.
+ * - A line far shorter than the target width (rare, e.g. a very short
+ *   final line) is centered instead of force-stretched, since spacing
+ *   it out that much would look wrong rather than justified.
  */
 @Composable
-private fun JustifiedMushafLine(
-    text: String,
+private fun MushafLineText(
+    line: MushafLine,
     fontSize: androidx.compose.ui.unit.TextUnit,
     availableWidthPx: Float,
     textMeasurer: androidx.compose.ui.text.TextMeasurer
 ) {
-    Text(
-        text = text,
+    val density = LocalDensity.current
+    val shouldCenter = line.isCentered ||
+        line.lineType == "surah_name" ||
+        line.lineType == "basmallah" ||
+        line.text.isEmpty()
+
+    val baseStyle = TextStyle(
         fontFamily = IndoPakFont,
         fontSize = fontSize,
+        lineHeight = fontSize * LINE_HEIGHT_MULTIPLIER,
+        textAlign = TextAlign.Center
+    )
+
+    if (shouldCenter) {
+        Text(
+            text = line.text,
+            style = baseStyle,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.fillMaxWidth()
+        )
+        return
+    }
+
+    val naturalWidthPx = textMeasurer.measure(
+        text = AnnotatedString(line.text),
+        style = baseStyle,
+        maxLines = 1,
+        softWrap = false
+    ).size.width
+
+    val extraWidthPx = availableWidthPx - naturalWidthPx
+    val visibleCharCount = line.text.count { !it.isWhitespace() }
+
+    val letterSpacing = if (
+        extraWidthPx > 0f &&
+        visibleCharCount > 0 &&
+        extraWidthPx <= naturalWidthPx * MAX_JUSTIFY_STRETCH_RATIO
+    ) {
+        with(density) { (extraWidthPx / visibleCharCount).toSp() }
+    } else {
+        0.sp
+    }
+
+    Text(
+        text = line.text,
+        style = baseStyle.copy(letterSpacing = letterSpacing),
         maxLines = 1,
         softWrap = false,
-        textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth()
     )
 }
