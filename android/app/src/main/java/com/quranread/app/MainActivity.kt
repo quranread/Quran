@@ -11,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import com.quranread.app.data.Mushaf16DatabaseHelper
 import com.quranread.app.data.QuranDatabaseHelper
 import com.quranread.app.ui.AyahScreen
+import com.quranread.app.ui.HafsMushafPocScreen
 import com.quranread.app.ui.HomeScreen
 import com.quranread.app.ui.Mushaf16LineScreen
 import com.quranread.app.ui.SurahListScreen
@@ -24,7 +25,14 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface {
                     val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = "home") {
+                    // TEMP for POC testing only: startDestination points
+                    // at the Hafs SVG screen so it opens immediately on
+                    // launch. Change back to "home" once you're done
+                    // testing - this isn't wired into HomeScreen's UI.
+                    NavHost(navController = navController, startDestination = "hafs_poc") {
+                        composable("hafs_poc") {
+                            HafsMushafPocScreen(startPage = 604)
+                        }
                         composable("home") {
                             HomeScreen(
                                 onOpenTranslationQuran = { navController.navigate("surahs") },
