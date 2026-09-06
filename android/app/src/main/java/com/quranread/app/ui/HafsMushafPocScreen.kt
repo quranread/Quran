@@ -89,26 +89,22 @@ private fun SvgPage(pageNumber: Int, modifier: Modifier = Modifier) {
 
     Canvas(modifier = modifier) {
         drawIntoCanvas { canvas ->
-            val docWidth = svg.documentWidth.takeIf { it > 0f } ?: 595f
-            val docHeight = svg.documentHeight.takeIf { it > 0f } ?: 842f
-
-            // Fit inside the available space WITHOUT stretching - a
-            // print-typeset page distorted to fill the screen would
-            // undo the entire point of using pre-typeset SVGs.
-            val scale = minOf(size.width / docWidth, size.height / docHeight)
-            val renderedWidth = docWidth * scale
-            val renderedHeight = docHeight * scale
-            val left = (size.width - renderedWidth) / 2f
-            val top = (size.height - renderedHeight) / 2f
-
-            svg.setDocumentWidth(renderedWidth)
-            svg.setDocumentHeight(renderedHeight)
-
+            // Let AndroidSVG do ALL of the centering/scaling itself by
+            // telling it exactly which rectangle to render into - the
+            // file's own preserveAspectRatio="xMidYMid meet" then
+            // handles fitting the viewBox into that rect, centered.
+            //
+            // The previous version computed its own scale/translate
+            // AND set svg.documentWidth/Height, then ALSO called
+            // renderToCanvas(canvas) with no viewport - but that
+            // no-viewport overload does its own full-canvas centering
+            // internally regardless of documentWidth/Height. So two
+            // separate centering calculations were stacking, which is
+            // what pushed the page off-center to the right instead of
+            // landing in the middle of the screen.
             val nativeCanvas = canvas.nativeCanvas
-            val checkpoint = nativeCanvas.save()
-            nativeCanvas.translate(left, top)
-            svg.renderToCanvas(nativeCanvas)
-            nativeCanvas.restoreToCount(checkpoint)
+            val viewPort = android.graphics.RectF(0f, 0f, size.width, size.height)
+            svg.renderToCanvas(nativeCanvas, viewPort)
         }
     }
 }
